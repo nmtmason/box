@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+error() {
+  echo "box: $@" 1>&2
+  exit 1
+}
+
+box=$(which VBoxManage)
+if [ $? -ne 0 ]; then
+  error "VirtualBox does not appear to be installed"
+fi
+
+usage() {
+  cat <<EOF
+
+Usage: box <command>
+
+Commands:
+
+list          List available virtual machines.
+status <name> Show the status of <name>.
+start <name>  Start <name>.
+stop <name>   Stop <name>.
+halt <name>   Imediately stop <name>.
+reset <name>  Reset <name>.
+
+EOF
+}
+
+box_list() {
+  local available=$("$box" list vms | awk '{ print $1 }' | sed 's/"//g')
+  for vm in $available; do
+    echo "$(box_status $vm)"
+  done
+}
+
+box_status() {
+  local info
+  info=$("$box" showvminfo "$1" 2> /dev/null)
+  [ $? -eq 0 ] || error "$1 does not exist"
+  local status=$("$box" showvminfo "$1" | grep State | sed 's/^State:\s*\(.*\)$/\1/' | sed 's/^ *//g' 2> /dev/null)
+  echo "$1 $status"
+}
+
+box_start() {
+  local state=$(box_status "$1")
+  ! [[ "$state" =~ "running" ]] || error "$1 is already running"
+  "$box" startvm "$1" --type headless &> /dev/null
+}
+
+box_stop() {
+  local state=$(box_status "$1")
+  [[ "$state" =~ "running" ]] || error "$1 is not running"
+  "$box" controlvm "$1" "$2" &> /dev/null
+}
+
+command="$1"
+name="$2"
+case $command in
+  list) box_list ;;
+  status) box_status "$name" ;;
+  start) box_start "$name" ;;
+  stop) box_stop "$name" savestate ;;
+  halt) box_stop "$name" poweroff ;;
+  reset) box_stop "$name" reset ;;
+  *) usage ;;
+esac
+
+exit 0;
+
